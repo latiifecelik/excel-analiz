@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Excel Analiz</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link rel="icon" href="/path/to/favicon.ico" type="image/x-icon">
+    <style>
+        /* Base Layout Styles */
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f2 100%);
+            line-height: 1.6;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            font-weight: 600;
+        }
+
+        /* File Upload Component Styles */
+        .drop-zone {
+            width: 100%;
+            height: 250px;
+            border: 3px dashed #4a90e2;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            background-color: rgba(255, 255, 255, 0.95);
+            margin-bottom: 30px;
+            transition: all 0.4s ease;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            position: relative;
+        }
+        
+        .drop-zone:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+            border-color: #2196f3;
+        }
+        
+        .drop-zone.dragover {
+            background-color: #e3f2fd;
+            border-color: #2196f3;
+        }
+
+        /* Graph Container Styles */
+        .graph-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            margin-top: 30px;
+            padding: 20px;
+        }
+        
+        .graph-box {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            min-height: 500px;
+            flex: 1 1 calc(50% - 30px); /* Her satırda 2 grafik olacak şekilde ayarlama */
+            transition: transform 0.3s ease;
+        }
+
+        .graph-box:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+        }
+
+        .graph-box h3 {
+            color: #2c3e50;
+            font-size: 1.4em;
+            margin-bottom: 25px;
+        }
+
+        /* Loading and Error States */
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+
+        .error-message {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .ai-analysis {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel Dosyası Analizi</h1>
+    
+    <div class="drop-zone" id="dropZone">
+        <p>Excel dosyanızı buraya sürükleyin</p>
+        <p class="accepted-files">Kabul edilen format: .xlsx</p>
+        <input type="file" id="fileInput" style="display: none" accept=".xlsx">
+    </div>
+    
+    <div class="error-message" id="errorMessage"></div>
+    
+    <div class="loading" id="loading">
+        <p>Dosya analiz ediliyor...</p>
+    </div>
+    
+    <div class="result-container" id="resultContainer">
+        <h2>Analiz Sonuçları</h2>
+        <div class="graphs-section">
+            <h3>Grafikler</h3>
+            <div class="graph-container" id="graphContainer"></div>
+        </div>
+        <div class="data-summary">
+            <h3>Veri Özeti</h3>
+            <table id="dataSummaryTable" border="1" style="width:100%; margin-top: 20px;">
+                <thead>
+                    <tr id="tableHeader"></tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            const loading = document.getElementById('loading');
+            const errorMessage = document.getElementById('errorMessage');
+            const resultContainer = document.getElementById('resultContainer');
+            const graphContainer = document.getElementById('graphContainer');
+
+            // CSRF token'ını almak için bir fonksiyon
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+
+            const csrftoken = getCookie('csrftoken');
+
+            // File Drop Handling
+            if (dropZone) {
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('dragover');
+                });
+
+                dropZone.addEventListener('dragleave', () => {
+                    dropZone.classList.remove('dragover');
+                });
+
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('dragover');
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.name.endsWith('.xlsx')) {
+                        handleFile(file);
+                    } else {
+                        showError('Lütfen geçerli bir Excel dosyası (.xlsx) yükleyin.');
+                    }
+                });
+
+                dropZone.addEventListener('click', () => {
+                    fileInput && fileInput.click();
+                });
+            }
+
+            if (fileInput) {
+                fileInput.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file && file.name.endsWith('.xlsx')) {
+                        handleFile(file);
+                    } else {
+                        showError('Lütfen geçerli bir Excel dosyası (.xlsx) yükleyin.');
+                    }
+                });
+            }
+
+            function handleFile(file) {
+                loading.style.display = 'block';
+                errorMessage.style.display = 'none';
+                resultContainer.style.display = 'none';
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('/analyze/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: formData
+                })
+                .then(async response => {
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Dosya işlenirken bir hata oluştu');
+                    }
+                    return data;
+                })
+                .then(data => {
+                    loading.style.display = 'none';
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    displayResults(data);
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    showError(error.message || 'Dosya analiz edilirken bir hata oluştu.');
+                    console.error('Error:', error);
+                });
+            }
+
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+                resultContainer.style.display = 'none';
+            }
+
+            function displayResults(data) {
+                loading.style.display = 'none';
+                resultContainer.style.display = 'block';
+                graphContainer.innerHTML = '';
+
+                // Display graphs
+                if (Array.isArray(data.graphs)) {
+                    data.graphs.forEach(graph => {
+                        const graphBox = document.createElement('div');
+                        graphBox.className = 'graph-box';
+                        graphBox.innerHTML = `<h3>${graph.title}</h3>`;
+                        const plotDiv = document.createElement('div');
+                        graphBox.appendChild(plotDiv);
+                        graphContainer.appendChild(graphBox);
+                        
+                        Plotly.newPlot(plotDiv, graph.plots[0].data);
+                    });
+                }
+
+                // Display summary statistics
+                if (data.summary_stats) {
+                    const tableHeader = document.getElementById('tableHeader');
+                    const tableBody = document.getElementById('tableBody');
+
+                    tableHeader.innerHTML = '<th>İstatistik</th>' + 
+                        Object.keys(data.summary_stats).map(col => `<th>${col}</th>`).join('');
+
+                    const stats = ['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max'];
+                    const statNames = {
+                        'count': 'Veri Sayısı',
+                        'mean': 'Ortalama',
+                        'std': 'Standart Sapma',
+                        'min': 'Minimum',
+                        '25%': '1. Çeyrek',
+                        '50%': 'Medyan',
+                        '75%': '3. Çeyrek',
+                        'max': 'Maksimum'
+                    };
+
+                    tableBody.innerHTML = stats.map(stat => {
+                        const cells = Object.values(data.summary_stats).map(colStats => 
+                            `<td>${colStats[stat] !== null ? colStats[stat].toFixed(2) : 'N/A'}</td>`
+                        ).join('');
+                        return `<tr><td>${statNames[stat]}</td>${cells}</tr>`;
+                    }).join('');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

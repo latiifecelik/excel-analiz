@@ -1,0 +1,7 @@
+django
+pandas
+plotly
+openpyxl
+scipy
+numpy
+scikit-learn
